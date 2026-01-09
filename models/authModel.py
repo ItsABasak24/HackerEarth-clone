@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
 
+
 class ProfileImage(BaseModel):
     image_uri:str
     public_id:str
@@ -35,3 +36,17 @@ class RegisterUser(User):
 class LoginUser(BaseModel):
     email: EmailStr = Field(...)
     password:str = Field(...)
+
+
+class OTPRequest(BaseModel):
+    email: EmailStr
+
+class OTPVerifyRequest(BaseModel):
+    email: EmailStr
+    otp: int
+    name: str
+    password: str
+
+class OTPOnlyVerifyRequest(BaseModel):
+    otp: int
+

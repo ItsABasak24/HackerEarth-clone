@@ -8,3 +8,11 @@ class ENVConfig:
     MONGO_DB = os.getenv("MONGO_DB","")
     JWT_AUTH_SECRET = os.getenv("JWT_AUTH_SECRET", )
     ALGORITHM = "HS256"
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID","")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET","")
+
+    SMTP_EMAIL= os.getenv("SMTP_EMAIL")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+    OTP_EXP_MINUTES= int(os.getenv("OTP_EXP_MINUTES", 5))
+   
+

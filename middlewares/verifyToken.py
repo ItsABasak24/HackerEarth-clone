@@ -2,7 +2,6 @@ from fastapi import HTTPException, status, Depends
 import jwt
 from config.Env import ENVConfig
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
 # The code supports for frontend
 """"
 def verifyToken(req:Request):
@@ -20,7 +19,6 @@ def verifyToken(req:Request):
     except Exception as e:
         raise HTTPException(401,f"{e}")
 """""
-
 security = HTTPBearer()
 def verifyToken(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials

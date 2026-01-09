@@ -1,10 +1,14 @@
-from config.db import user_collection, profile_collection
+from config.db import user_collection, profile_collection, otp_collection
 from models import authModel
 from fastapi.exceptions import HTTPException
 import bcrypt , bson
 from config.Env import ENVConfig
 import jwt
 from datetime import datetime, timedelta
+from google.oauth2 import id_token
+from google.auth.transport import requests
+import random, smtplib
+from email.message import EmailMessage
 
 
 async def registerService(data:authModel.RegisterUser):
@@ -72,22 +76,77 @@ async def profileService(userId: str):
 
     return check_exist | (profile or {})
 
-# async def profileService(userId:str):
-#     check_exist = await user_collection.find_one({"_id":bson.ObjectId(userId)},{
-#             "name": 1,
-#             "email": 1
-#     })
-#     if not check_exist:
-#         raise HTTPException(status_code=404, detail="User details not found")
+def generateOTP():
+    return random.randint(100000, 999999)
+
+
+def sendOTPEmail(email: str, otp: int):
+    msg = EmailMessage()
+    msg["Subject"] = "Your Registration OTP"
+    msg["From"] = ENVConfig.SMTP_EMAIL
+    msg["To"] = email
+    msg.set_content(f"Your OTP for registration is {otp}. It is valid for 5 minutes.")
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(ENVConfig.SMTP_EMAIL, ENVConfig.SMTP_PASSWORD)
+        server.send_message(msg)
     
-#     check_exist['_id'] = str(check_exist['_id'])
-#     profile = await profile_collection.find_one({"user_id":check_exist['_id']})
-#     del profile['_id']
-#     del profile['user_id']
-#     if(profile['avatar']):
-#         profile['avatar'] = profile['avatar']['image_uri']
-    
-#     return check_exist | profile
+
+
+async def requestRegisterOTP(data: authModel.RegisterUser):
+    exists = await user_collection.find_one({"email": data.email.lower()})
+    if exists:
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    otp = generateOTP()
+
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(data.password.encode(), salt).decode()
+
+    await otp_collection.delete_many({"email": data.email.lower()})
+
+    await otp_collection.insert_one({
+        "email": data.email.lower(),
+        "otp": otp,
+        "name": data.name,
+        "password": hashed_password,
+        "expires_at": datetime.utcnow() + timedelta(minutes=ENVConfig.OTP_EXP_MINUTES)
+    })
+
+    sendOTPEmail(data.email, otp)
+
+    return {"msg": "OTP sent to email"}
+
+
+
+async def verifyOTPAndRegisterOnlyOTP(data: authModel.OTPOnlyVerifyRequest):
+    record = await otp_collection.find_one({"otp": data.otp})
+
+    if not record:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    if record["expires_at"] < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OTP expired")
+
+    user = await user_collection.insert_one({
+        "email": record["email"],
+        "password": record["password"],
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    })
+
+    await profile_collection.insert_one({
+        "user_id": str(user.inserted_id),
+        "name": record["name"],
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    })
+
+    await otp_collection.delete_one({"_id": record["_id"]})
+
+    return {"msg": "Registration successful"}
+
+
 
 
 

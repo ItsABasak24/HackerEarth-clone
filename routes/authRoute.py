@@ -3,13 +3,19 @@ from controllers import authController
 from models import authModel
 from middlewares.verifyToken import verifyToken
 from typing import Annotated
+from fastapi.security import OAuth2PasswordRequestForm
 
 router = APIRouter(prefix="/api/v1/auth", tags=['auth'])
 
-#register user
-@router.post("/register")
-async def registerView(data:authModel.RegisterUser):
-    return await authController.registerController(data)
+
+@router.post("/register/request-otp")
+async def requestOTP(data: authModel.RegisterUser):
+    return await authController.requestRegisterOTPController(data)
+
+
+@router.post("/register/verify-otp")
+async def verifyOTP(data: authModel.OTPOnlyVerifyRequest):
+    return await authController.verifyOTPOnlyController(data)
 
 
 # login user
@@ -22,4 +28,6 @@ async def loginView(data:authModel.LoginUser):
 @router.get("/profile")
 async def profileView(userId= Depends(verifyToken)):
     return await authController.profileController(userId)
+
+
 

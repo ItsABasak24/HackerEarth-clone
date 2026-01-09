@@ -6,3 +6,4 @@ db = client[ENVConfig.MONGO_DB]
 
 user_collection = db['users']
 profile_collection = db['profile']
+otp_collection = db['otp_verifications']
