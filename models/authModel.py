@@ -76,9 +76,11 @@ class RunCodeRequest(BaseModel):
     stdin: Optional[str] = ""
 
 class RunCodeResponse(BaseModel):
-    stdout: Optional[str]
-    stdin: Optional[str]
-    executionTime: Optional[str]
-    memory: Optional[str]
-    status: Optional[str]
+    status: Optional[str] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+    compilationTime: Optional[int] = None
+    executionTime: Optional[int] = None
+    memoryUsed: Optional[int] = None
+
 

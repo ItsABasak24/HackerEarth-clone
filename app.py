@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes.authRoute import router as AuthRouter
+from routes.authRoute import router as AuthRouter, executionRouter
+
 
 app = FastAPI()
 
@@ -15,6 +16,7 @@ app.add_middleware(CORSMiddleware, allow_headers=["*"],
     )
 
 app.include_router(AuthRouter)
+app.include_router(executionRouter)
 @app.get("/", tags=['health'])
 def healthRoute():
     return{

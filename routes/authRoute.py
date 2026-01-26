@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi.security import OAuth2PasswordRequestForm
 from starlette.responses import RedirectResponse
 router = APIRouter(prefix="/api/v1/auth", tags=['auth'])
-
+executionRouter = APIRouter(prefix="/api/v1/execute", tags=["execution"])
 
 @router.post("/register/request-otp")
 async def requestOTP(data: authModel.RegisterUser):
@@ -34,6 +34,8 @@ async def profileView(userId= Depends(verifyToken)):
     return await authController.profileController(userId)
 
 
-
+@executionRouter.post("/run", response_model=authModel.RunCodeResponse)
+async def runCode(data: authModel.RunCodeRequest, userId: str = Depends(verifyToken)):
+    return await authController.runCodeController(data)
 
 

@@ -42,3 +42,6 @@ async def verifyOTPOnlyController(data: authModel.OTPOnlyVerifyRequest):
 async def googleAuthController(data: authModel.GoogleAuthRequest):
     return await authService.googleAuthService(data.id_token)
 
+
+async def runCodeController(data: authModel.RunCodeRequest):
+    return await authService.runCodeService(data)

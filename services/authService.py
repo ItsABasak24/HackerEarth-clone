@@ -9,7 +9,21 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 import random, smtplib
 from email.message import EmailMessage
+import httpx
 
+HEADERS = {
+    "Content-Type": "application/json",
+    "x-rapidapi-host": ENVConfig.RAPID_API_HOST,
+    "x-rapidapi-key": ENVConfig.RAPID_API_KEY
+}
+
+FILE_NAME_MAP = {
+    "python": "index.py",
+    "c": "main.c",
+    "cpp": "main.cpp",
+    "java": "Main.java",
+    "nodejs": "index.js"
+}
 
 async def registerService(data:authModel.RegisterUser):
     check_exist = await user_collection.find_one({"email":data.email.lower()})
@@ -43,7 +57,7 @@ async def loginService(data:authModel.LoginUser):
     token = jwt.encode({
         "user_id":str(check_exist['_id']),
         "iat":datetime.utcnow(),
-        "exp":datetime.utcnow()+timedelta(minutes=5)
+        "exp":datetime.utcnow()+timedelta(minutes=10)
     }, ENVConfig.JWT_AUTH_SECRET, algorithm="HS256")
     del check_exist['password']
 
@@ -154,16 +168,12 @@ async def googleAuthService(id_token_str: str):
             requests.Request(),
             ENVConfig.GOOGLE_CLIENT_ID,
         )
-
         email = idinfo.get("email")
         name = idinfo.get("name")
         if not email:
             raise HTTPException(status_code=400, detail="Google account has no email")
-
         email = email.lower()
-
         user = await user_collection.find_one({"email": email})
-
         if not user:
             user_doc = await user_collection.insert_one({
                 "email": email,
@@ -172,14 +182,12 @@ async def googleAuthService(id_token_str: str):
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
             })
-
             await profile_collection.insert_one({
                 "user_id": str(user_doc.inserted_id),
                 "name": name,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
             })
-
             user_id = str(user_doc.inserted_id)
         else:
             user_id = str(user["_id"])
@@ -193,11 +201,31 @@ async def googleAuthService(id_token_str: str):
             ENVConfig.JWT_AUTH_SECRET,
             algorithm="HS256",
         )
-
         return {
             "msg": "Google login successful",
             "token": token
         }
-
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
+
+
+async def runCodeService(data: authModel.RunCodeRequest):
+    payload = {
+        "language": data.language.value,
+        "stdin": data.stdin,
+        "files": [
+            {
+                "name": FILE_NAME_MAP[data.language.value],
+                "content": data.code
+            }
+        ]
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            ENVConfig.RAPID_API_URL,
+            json=payload,
+            headers=HEADERS
+        )
+    response.raise_for_status()
+    return response.json()
