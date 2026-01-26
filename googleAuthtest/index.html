@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Google Auth Test</title>
+
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+  <h2>Test Google Login with FastAPI</h2>
+
+  <!-- Google loads button here -->
+  <div
+    id="g_id_onload"
+    data-client_id="236913838688-vcrof45rf60b9a96549bbi9vfimsm85d.apps.googleusercontent.com"
+    data-callback="handleCredentialResponse">
+  </div>
+
+  <div class="g_id_signin"></div>
+
+  <pre id="output"></pre>
+
+  <script>
+    function handleCredentialResponse(response) {
+      const idToken = response.credential;
+      console.log("Google ID Token:", idToken);
+
+      // Send token to backend
+      fetch("http://127.0.0.1:8000/api/v1/auth/google/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          id_token: idToken
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById("output").innerText =
+          JSON.stringify(data, null, 2);
+        console.log("Backend response:", data);
+      })
+      .catch(err => {
+        console.error("Error:", err);
+      });
+    }
+  </script>
+
+</body>
+</html>

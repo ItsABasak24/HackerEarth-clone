@@ -147,8 +147,57 @@ async def verifyOTPAndRegisterOnlyOTP(data: authModel.OTPOnlyVerifyRequest):
     return {"msg": "Registration successful"}
 
 
+async def googleAuthService(id_token_str: str):
+    try:
+        idinfo = id_token.verify_oauth2_token(
+            id_token_str,                 
+            requests.Request(),
+            ENVConfig.GOOGLE_CLIENT_ID,
+        )
 
+        email = idinfo.get("email")
+        name = idinfo.get("name")
+        if not email:
+            raise HTTPException(status_code=400, detail="Google account has no email")
 
+        email = email.lower()
 
+        user = await user_collection.find_one({"email": email})
 
+        if not user:
+            user_doc = await user_collection.insert_one({
+                "email": email,
+                "password": None,
+                "provider": "google",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+            })
 
+            await profile_collection.insert_one({
+                "user_id": str(user_doc.inserted_id),
+                "name": name,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+            })
+
+            user_id = str(user_doc.inserted_id)
+        else:
+            user_id = str(user["_id"])
+
+        token = jwt.encode(
+            {
+                "user_id": user_id,
+                "iat": datetime.utcnow(),
+                "exp": datetime.utcnow() + timedelta(days=7),
+            },
+            ENVConfig.JWT_AUTH_SECRET,
+            algorithm="HS256",
+        )
+
+        return {
+            "msg": "Google login successful",
+            "token": token
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))

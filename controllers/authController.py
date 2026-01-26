@@ -1,11 +1,6 @@
 from services import authService
 from models import authModel
 from fastapi import HTTPException
-# from services.authService import (verifyGoogleToken, generateOTP, saveOTP, sendOTPEmail, verifyOTP)
-from datetime import datetime, timedelta
-from config.db import user_collection
-import jwt
-from config.Env import ENVConfig
 
 async def registerController(data:authModel.RegisterUser):
     try:
@@ -39,3 +34,11 @@ async def requestRegisterOTPController(data: authModel.RegisterUser):
 
 async def verifyOTPOnlyController(data: authModel.OTPOnlyVerifyRequest):
     return await authService.verifyOTPAndRegisterOnlyOTP(data)
+
+
+# async def googleRequestOTPController(data: authModel.GoogleAuthRequest):
+#     return await authService.googleRequestOTP(data.id_token)
+
+async def googleAuthController(data: authModel.GoogleAuthRequest):
+    return await authService.googleAuthService(data.id_token)
+

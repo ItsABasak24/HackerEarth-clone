@@ -4,7 +4,7 @@ from models import authModel
 from middlewares.verifyToken import verifyToken
 from typing import Annotated
 from fastapi.security import OAuth2PasswordRequestForm
-
+from starlette.responses import RedirectResponse
 router = APIRouter(prefix="/api/v1/auth", tags=['auth'])
 
 
@@ -17,6 +17,10 @@ async def requestOTP(data: authModel.RegisterUser):
 async def verifyOTP(data: authModel.OTPOnlyVerifyRequest):
     return await authController.verifyOTPOnlyController(data)
 
+@router.post("/google/auth")
+async def googleAuth(data: authModel.GoogleAuthRequest):
+    return await authController.googleAuthController(data)
+
 
 # login user
 @router.post("/login")
@@ -28,6 +32,8 @@ async def loginView(data:authModel.LoginUser):
 @router.get("/profile")
 async def profileView(userId= Depends(verifyToken)):
     return await authController.profileController(userId)
+
+
 
 
 
