@@ -68,7 +68,9 @@ class SupportedLanguage(str, Enum):
     cpp = "cpp"
     java = "java"
     python = "python"
-    javascript = "nodejs"
+    javascript = "javascript"
+    go = "go"
+    rust = "rust"
 
 class RunCodeRequest(BaseModel):
     language: SupportedLanguage
@@ -84,3 +86,21 @@ class RunCodeResponse(BaseModel):
     memoryUsed: Optional[int] = None
 
 
+class Problem(BaseModel):
+    id: str
+    title: str
+    description: str
+    difficulty: str
+
+
+class TestCase(BaseModel):
+    problem_id: str
+    input: str
+    expected_output: str
+    is_sample: bool = False
+
+
+class SubmitRequest(BaseModel):
+    problem_id: str
+    language: SupportedLanguage
+    code: str

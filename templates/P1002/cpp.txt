@@ -1,0 +1,15 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+    int n;
+    cin >> n;
+
+    long long fact = 1;
+
+    // WRITE YOUR LOGIC HERE
+    
+
+    cout << fact;
+    return 0;
+}

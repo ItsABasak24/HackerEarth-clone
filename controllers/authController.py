@@ -45,3 +45,16 @@ async def googleAuthController(data: authModel.GoogleAuthRequest):
 
 async def runCodeController(data: authModel.RunCodeRequest):
     return await authService.runCodeService(data)
+
+
+async def submitController(data: authModel.SubmitRequest):
+    testcases = await authService.getTestCasesForProblem(data.problem_id)
+
+    if not testcases:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    return await authService.judgeSubmission(
+        data.language,
+        data.code,
+        testcases
+    )

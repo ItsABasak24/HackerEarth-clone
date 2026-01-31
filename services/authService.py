@@ -1,4 +1,4 @@
-from config.db import user_collection, profile_collection, otp_collection
+from config.db import user_collection, profile_collection, otp_collection, testcase_collection
 from models import authModel
 from fastapi.exceptions import HTTPException
 import bcrypt , bson
@@ -10,6 +10,8 @@ from google.auth.transport import requests
 import random, smtplib
 from email.message import EmailMessage
 import httpx
+from pathlib import Path
+
 
 HEADERS = {
     "Content-Type": "application/json",
@@ -22,8 +24,34 @@ FILE_NAME_MAP = {
     "c": "main.c",
     "cpp": "main.cpp",
     "java": "Main.java",
-    "nodejs": "index.js"
+    "javascript": "index.js",
+    "go": "main.go",
+    "rust": "main.rs"
 }
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+TEMPLATE_DIR = BASE_DIR / "templates"
+
+LANGUAGE_TEMPLATE_MAP = {
+    "c":"c.txt",
+    "cpp":"cpp.txt",
+    "java":"java.txt",
+    "python":"python.txt",
+    "javascript":"javascript.txt",
+    "go":"go.txt",
+    "rust":"rust.txt",
+}
+
+def getTemplate(problem_id: str, language: str) -> str:
+    if language not in LANGUAGE_TEMPLATE_MAP:
+        raise ValueError(f"Unsuported language: {language}")
+    
+    file_path = TEMPLATE_DIR / problem_id / LANGUAGE_TEMPLATE_MAP[language]
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"Template not found for problem {problem_id} and language {language}"
+        )
+    return file_path.read_text()
 
 async def registerService(data:authModel.RegisterUser):
     check_exist = await user_collection.find_one({"email":data.email.lower()})
@@ -57,7 +85,7 @@ async def loginService(data:authModel.LoginUser):
     token = jwt.encode({
         "user_id":str(check_exist['_id']),
         "iat":datetime.utcnow(),
-        "exp":datetime.utcnow()+timedelta(minutes=10)
+        "exp":datetime.utcnow()+timedelta(days=10)
     }, ENVConfig.JWT_AUTH_SECRET, algorithm="HS256")
     del check_exist['password']
 
@@ -99,7 +127,25 @@ def sendOTPEmail(email: str, otp: int):
     msg["Subject"] = "Your Registration OTP"
     msg["From"] = ENVConfig.SMTP_EMAIL
     msg["To"] = email
-    msg.set_content(f"Your OTP for registration is {otp}. It is valid for 5 minutes.")
+    # msg.set_content(f"Your OTP for registration is {otp}. It is valid for 5 minutes.")
+    msg.set_content(f"""
+Hello,
+
+Welcome to CodeEasy.
+
+Thank you for registering with CodeEasy. To complete your registration and verify your email address, please use the One-Time Password (OTP) below:
+
+Your OTP:
+{otp}
+
+This OTP is valid for 5 minutes. Please do not share this code with anyone.
+
+If you did not request this verification, you can safely ignore this email.
+
+Warm regards,
+Team CodeEasy
+""")
+
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(ENVConfig.SMTP_EMAIL, ENVConfig.SMTP_PASSWORD)
@@ -229,3 +275,143 @@ async def runCodeService(data: authModel.RunCodeRequest):
         )
     response.raise_for_status()
     return response.json()
+
+
+async def getTestCasesForProblem(problem_id: str):
+    return await testcase_collection.find(
+        {"problem_id": problem_id}
+    ).to_list(None)
+
+
+def normalize_output(s: str) -> str:
+    return "\n".join(
+        line.rstrip() for line in s.rstrip().splitlines()
+    )
+
+
+# async def judgeSubmission(language, code, testcases):
+#     for tc in testcases:
+#         payload = authModel.RunCodeRequest(
+#             language=language,
+#             code=code,
+#             stdin=tc["input"]
+#         )
+
+#         result = await runCodeService(payload)
+
+#         if result.get("stderr"):
+#             return {
+#                 "verdict": "Runtime Error",
+#                 "stderr": result["stderr"]
+#             }
+
+#         user_output = normalize_output(result.get("stdout") or "")
+#         expected_output = normalize_output(str(tc["expected_output"]))
+
+#         if user_output != expected_output:
+#             return {
+#                 "verdict": "Wrong Answer"
+#             }
+
+#     return {
+#         "verdict": "Accepted"
+#     }
+
+# async def judgeSubmission(language, code, testcases):
+#     for tc in testcases:
+#         payload = authModel.RunCodeRequest(
+#             language=language,
+#             code=code,
+#             stdin=tc["input"]
+#         )
+
+#         result = await runCodeService(payload)
+
+#         stdout = (result.get("stdout") or "").strip()
+#         stderr = (result.get("stderr") or "").strip()
+
+#         # 🟥 1️⃣ Compile-time Error
+#         if stderr and not stdout and any(
+#             kw in stderr.lower()
+#             for kw in [
+#                 "error:", "expected", "undefined", "syntax",
+#                 "compilation", "abort", "cannot find",
+#                 "missing", "failed to compile"
+#             ]
+#         ):
+#             return {
+#                 "verdict": "Compile Time Error",
+#                 "stderr": stderr
+#             }
+
+#         # 🟧 2️⃣ Runtime Error
+#         if stderr:
+#             return {
+#                 "verdict": "Runtime Error",
+#                 "stderr": stderr
+#             }
+
+#         # 🟨 3️⃣ Wrong Answer
+#         user_output = normalize_output(stdout)
+#         expected_output = normalize_output(str(tc["expected_output"]))
+
+#         if user_output != expected_output:
+#             return {
+#                 "verdict": "Wrong Answer",
+#                 "expected": expected_output,
+#                 "found": user_output
+#             }
+
+#     return {
+#         "verdict": "Accepted"
+#     }
+
+async def judgeSubmission(language, code, testcases):
+    for tc in testcases:
+        payload = authModel.RunCodeRequest(
+            language=language,
+            code=code,
+            stdin=tc["input"]
+        )
+        result = await runCodeService(payload)
+        stdout = (result.get("stdout") or "").strip()
+        stderr = (result.get("stderr") or "").strip()
+
+        if stderr:
+            if language == "python":
+                if "syntaxerror" in stderr.lower() or "indentationerror" in stderr.lower():
+                    return {
+                        "verdict": "Compile Time Error",
+                        "stderr": stderr
+                    }
+            else:
+                if any(
+                    kw in stderr.lower()
+                    for kw in [
+                        "error:", "expected", "undefined", "cannot find",
+                        "compilation", "failed to compile", "abort"
+                    ]
+                ):
+                    return {
+                        "verdict": "Compile Time Error",
+                        "stderr": stderr
+                    }
+        if stderr:
+            return {
+                "verdict": "Runtime Error",
+                "stderr": stderr
+            }
+        user_output = normalize_output(stdout)
+        expected_output = normalize_output(str(tc["expected_output"]))
+
+        if user_output != expected_output:
+            return {
+                "verdict": "Wrong Answer",
+                "expected": expected_output,
+                "found": user_output
+            }
+    return {
+        "verdict": "Accepted"
+    }
+
+

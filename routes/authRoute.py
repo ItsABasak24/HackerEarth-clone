@@ -38,4 +38,6 @@ async def profileView(userId= Depends(verifyToken)):
 async def runCode(data: authModel.RunCodeRequest, userId: str = Depends(verifyToken)):
     return await authController.runCodeController(data)
 
-
+@executionRouter.post("/submit")
+async def submitCode(data: authModel.SubmitRequest, userId: str = Depends(verifyToken)):
+    return await authController.submitController(data)

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.authRoute import router as AuthRouter, executionRouter
-
+from services.authService import getTemplate
 
 app = FastAPI()
 
@@ -23,3 +23,17 @@ def healthRoute():
         "msg":"Server is working properly."
     }
 
+@app.get("/template")
+def fetchTemplate(problem_id: str, language: str):
+    try:
+        code = getTemplate(problem_id, language)
+        return{
+            "problem_id": problem_id,
+            "language": language,
+            "code": code
+        } 
+    except Exception as e:
+        print("Template error:", e)
+        raise e
+        
+    
