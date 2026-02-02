@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
-from typing import Optional
-from datetime import datetime
+from typing import Optional, List
+from datetime import datetime, date
 from enum import Enum
 
 class ProfileImage(BaseModel):
@@ -11,7 +11,7 @@ class User(BaseModel):
     name:str = Field(...)
     email:EmailStr = Field(...)
     # password:str = Field(...)
-    password: Optional[str] = None
+    password: str = Field(..., min_length=6)
     auth_provider: str = "local"
     created_at:datetime = Field(default_factory=datetime.now)
     updated_at:datetime = Field(default_factory=datetime.now)
@@ -19,7 +19,7 @@ class User(BaseModel):
 class UserProfile(BaseModel):
     user_id:str = Field(...)
     name:str = Field(...)
-    # avatar:Optional[ProfileImage] = None
+    avatar:Optional[ProfileImage] = None
     created_at:datetime = Field(default_factory=datetime.now)
     updated_at:datetime = Field(default_factory=datetime.now)
     
@@ -29,8 +29,38 @@ def validate_name(cls, value):
         raise ValueError("Name must be greater than 3 characters!!!!!")
     return value
 
+
+class SocialLinks(BaseModel):
+    website: Optional[str] = None
+    github: Optional[str] = None
+    linkedin: Optional[str] = None
+    twitter: Optional[str] = None
+
+
+class Education(BaseModel):
+    institution: Optional[str] = None
+    degree: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+class Work(BaseModel):
+    company: Optional[str] = None
+    role: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
 class UpdateBasicDetails(BaseModel):
-    name:str = Field(...)
+    # name:str = Field(...)
+    gender: Optional[str] = None
+    location: Optional[str] = None
+    birthday: Optional[date] = None
+    bio: Optional[str] = None
+    socials: Optional[SocialLinks] = None
+    education: Optional[Education] = None
+    work: Optional[Work] = None
+
+    skills: Optional[List[str]] = None
 
 # class RegisterUser(User):
 #     pass

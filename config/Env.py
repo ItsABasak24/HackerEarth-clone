@@ -1,13 +1,30 @@
 from dotenv import load_dotenv
+import cloudinary
 import os
+
 
 load_dotenv()
 
+cloudinary.config(
+    cloud_name=os.getenv("CLOUD_NAME_CLOUDINARY"),
+    api_key=os.getenv("API_KEY_CLOUDINARY"),
+    api_secret=os.getenv("API_SECRET_CLOUDINARY"),
+    secure=True
+)
+
+print("Cloudinary configured with:", os.getenv("CLOUD_NAME_CLOUDINARY"))
 class ENVConfig:
     MONGO_URI = os.getenv("MONGO_URI","")
     MONGO_DB = os.getenv("MONGO_DB","")
     JWT_AUTH_SECRET = os.getenv("JWT_AUTH_SECRET", )
     ALGORITHM = "HS256"
+
+    
+    API_KEY_CLOUDINARY = os.getenv("API_KEY_CLOUDINARY")
+    API_SECRET_CLOUDINARY = os.getenv("API_SECRET_CLOUDINARY")
+    CLOUD_NAME_CLOUDINARY = os.getenv("CLOUD_NAME_CLOUDINARY")
+
+
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID","")
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET","")
 

@@ -33,6 +33,14 @@ async def loginView(data:authModel.LoginUser):
 async def profileView(userId= Depends(verifyToken)):
     return await authController.profileController(userId)
 
+@router.put("/update-avatar")
+async def updateAvatar(avatar: UploadFile =  File(...), userId = Depends(verifyToken)):
+    return await authController.updateAvatarController(avatar, userId)
+
+@router.put("/update-basic-details")
+async def UpdateBasicDetails(data:authModel.UpdateBasicDetails, userId = Depends(verifyToken)):
+    return await authController.updateBasicDetailsController(data, userId)
+
 
 @executionRouter.post("/run", response_model=authModel.RunCodeResponse)
 async def runCode(data: authModel.RunCodeRequest, userId: str = Depends(verifyToken)):
@@ -41,3 +49,10 @@ async def runCode(data: authModel.RunCodeRequest, userId: str = Depends(verifyTo
 @executionRouter.post("/submit")
 async def submitCode(data: authModel.SubmitRequest, userId: str = Depends(verifyToken)):
     return await authController.submitController(data)
+
+
+@router.post("/logout")
+async def logout():
+    return {
+        "msg": "Logged out successfully"
+    }

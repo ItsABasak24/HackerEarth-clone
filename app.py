@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.authRoute import router as AuthRouter, executionRouter
 from services.authService import getTemplate
+from config import Env
 
 app = FastAPI()
 
@@ -36,4 +37,7 @@ def fetchTemplate(problem_id: str, language: str):
         print("Template error:", e)
         raise e
         
+
+
+
     

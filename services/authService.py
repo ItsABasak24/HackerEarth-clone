@@ -11,6 +11,11 @@ import random, smtplib
 from email.message import EmailMessage
 import httpx
 from pathlib import Path
+from typing import Annotated
+from fastapi import UploadFile, File
+import cloudinary.uploader
+from datetime import date, datetime
+
 
 
 HEADERS = {
@@ -118,6 +123,70 @@ async def profileService(userId: str):
 
     return check_exist | (profile or {})
 
+
+async def updateAvatarService(avatar: Annotated[UploadFile, File()], userId: str):
+    exist = await profile_collection.find_one({"user_id": userId})
+    if exist.get("avatar") and exist["avatar"].get("public_id"):
+        cloudinary.uploader.destroy(exist['avatar']['public_id'])
+    contents = await avatar.read()
+    upload_result = cloudinary.uploader.upload(contents, folder= "user_profile_ecom/avatars", resource_type = "image")
+
+    await profile_collection.find_one_and_update({"user_id": userId},{
+        "$set":{
+            "avatar":{
+                "image_uri": upload_result['secure_url'],
+                "public_id": upload_result['public_id']
+            },
+            "update_at":datetime.now()
+        }
+    })
+    return {
+        "msg":"Avatar updated successfull.",
+        "url":upload_result["secure_url"]
+    }
+
+
+# async def updateBasicDetailsService(data: authModel.UpdateBasicDetails, userId: str):
+#     check_exist = await profile_collection.find_one_and_update({"user_id": userId},{
+#         "$set":{
+#             "name":data.name,
+#             "update_at":datetime.now()
+#         }
+#     })
+#     if not check_exist:
+#         raise HTTPException(status_code=404, detail="User details not found")
+    
+#     return{
+#         "msg": "Profile details update successfull"
+#     }
+
+from datetime import datetime, date
+
+async def updateBasicDetailsService(data: authModel.UpdateBasicDetails, userId: str):
+    update_data = data.dict(exclude_unset=True)
+
+    # 🔥 FIX: convert date → datetime
+    if "birthday" in update_data and isinstance(update_data["birthday"], date):
+        update_data["birthday"] = datetime.combine(
+            update_data["birthday"],
+            datetime.min.time()
+        )
+
+    update_data["updated_at"] = datetime.now()
+
+    result = await profile_collection.find_one_and_update(
+        {"user_id": userId},
+        {"$set": update_data},
+        return_document=True
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="User profile not found")
+
+    return {"msg": "Profile details updated successfully"}
+
+
+
 def generateOTP():
     return random.randint(100000, 999999)
 
@@ -128,23 +197,13 @@ def sendOTPEmail(email: str, otp: int):
     msg["From"] = ENVConfig.SMTP_EMAIL
     msg["To"] = email
     # msg.set_content(f"Your OTP for registration is {otp}. It is valid for 5 minutes.")
-    msg.set_content(f"""
-Hello,
+    # Read HTML file
+    with open("services\MailFormat\mailFormat.html", "r", encoding="utf-8") as file:
+        html = file.read()
 
-Welcome to CodeEasy.
-
-Thank you for registering with CodeEasy. To complete your registration and verify your email address, please use the One-Time Password (OTP) below:
-
-Your OTP:
-{otp}
-
-This OTP is valid for 5 minutes. Please do not share this code with anyone.
-
-If you did not request this verification, you can safely ignore this email.
-
-Warm regards,
-Team CodeEasy
-""")
+    # Replace OTP placeholder
+    html = html.replace("{otp}", str(otp))
+    msg.add_alternative(html, subtype="html")
 
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -287,84 +346,6 @@ def normalize_output(s: str) -> str:
     return "\n".join(
         line.rstrip() for line in s.rstrip().splitlines()
     )
-
-
-# async def judgeSubmission(language, code, testcases):
-#     for tc in testcases:
-#         payload = authModel.RunCodeRequest(
-#             language=language,
-#             code=code,
-#             stdin=tc["input"]
-#         )
-
-#         result = await runCodeService(payload)
-
-#         if result.get("stderr"):
-#             return {
-#                 "verdict": "Runtime Error",
-#                 "stderr": result["stderr"]
-#             }
-
-#         user_output = normalize_output(result.get("stdout") or "")
-#         expected_output = normalize_output(str(tc["expected_output"]))
-
-#         if user_output != expected_output:
-#             return {
-#                 "verdict": "Wrong Answer"
-#             }
-
-#     return {
-#         "verdict": "Accepted"
-#     }
-
-# async def judgeSubmission(language, code, testcases):
-#     for tc in testcases:
-#         payload = authModel.RunCodeRequest(
-#             language=language,
-#             code=code,
-#             stdin=tc["input"]
-#         )
-
-#         result = await runCodeService(payload)
-
-#         stdout = (result.get("stdout") or "").strip()
-#         stderr = (result.get("stderr") or "").strip()
-
-#         # 🟥 1️⃣ Compile-time Error
-#         if stderr and not stdout and any(
-#             kw in stderr.lower()
-#             for kw in [
-#                 "error:", "expected", "undefined", "syntax",
-#                 "compilation", "abort", "cannot find",
-#                 "missing", "failed to compile"
-#             ]
-#         ):
-#             return {
-#                 "verdict": "Compile Time Error",
-#                 "stderr": stderr
-#             }
-
-#         # 🟧 2️⃣ Runtime Error
-#         if stderr:
-#             return {
-#                 "verdict": "Runtime Error",
-#                 "stderr": stderr
-#             }
-
-#         # 🟨 3️⃣ Wrong Answer
-#         user_output = normalize_output(stdout)
-#         expected_output = normalize_output(str(tc["expected_output"]))
-
-#         if user_output != expected_output:
-#             return {
-#                 "verdict": "Wrong Answer",
-#                 "expected": expected_output,
-#                 "found": user_output
-#             }
-
-#     return {
-#         "verdict": "Accepted"
-#     }
 
 async def judgeSubmission(language, code, testcases):
     for tc in testcases:

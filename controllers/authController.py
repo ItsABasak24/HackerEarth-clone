@@ -24,7 +24,25 @@ async def profileController(userId:str):
         return res_obj
     except Exception as e:
         raise HTTPException(status_code=404, detail= f"{e}")
+
+
+async def updateAvatarController(avatar,userId):
+    try: 
+        res_obj = await authService.updateAvatarService(avatar, userId)
+        return res_obj
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{e}")
     
+
+async def updateBasicDetailsController(data, userId):
+    try:
+        res_obj = await authService.updateBasicDetailsService(data, userId)
+        return res_obj
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{e}")
+
+
+
 async def requestRegisterOTPController(data: authModel.RegisterUser):
     return await authService.requestRegisterOTP(data)
 
