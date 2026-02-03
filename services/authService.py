@@ -194,13 +194,10 @@ def generateOTP():
 def sendOTPEmail(email: str, otp: int):
     msg = EmailMessage()
     msg["Subject"] = "Your Registration OTP"
-    msg["From"] = ENVConfig.SMTP_EMAIL
+    msg["From"] = f"Arnab Basak <{ENVConfig.SMTP_EMAIL}>"
     msg["To"] = email
-    # msg.set_content(f"Your OTP for registration is {otp}. It is valid for 5 minutes.")
-    # Read HTML file
     with open("services\MailFormat\mailFormat.html", "r", encoding="utf-8") as file:
         html = file.read()
-
     # Replace OTP placeholder
     html = html.replace("{otp}", str(otp))
     msg.add_alternative(html, subtype="html")
