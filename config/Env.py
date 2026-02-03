@@ -40,5 +40,7 @@ class ENVConfig:
     RAPID_API_HOST = "onecompiler-apis.p.rapidapi.com"
     RAPID_API_URL = "https://onecompiler-apis.p.rapidapi.com/api/v1/run"
 
-   
+    REDIS_HOST = os.getenv("REDIS_HOST", "")
+    REDIS_PORT = os.getenv("REDIS_PORT", "")
+
 

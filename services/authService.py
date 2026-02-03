@@ -1,4 +1,4 @@
-from config.db import user_collection, profile_collection, otp_collection, testcase_collection
+from config.db import user_collection, profile_collection, testcase_collection
 from models import authModel
 from fastapi.exceptions import HTTPException
 import bcrypt , bson
@@ -15,7 +15,17 @@ from typing import Annotated
 from fastapi import UploadFile, File
 import cloudinary.uploader
 from datetime import date, datetime
+import json
+import redis.asyncio as redis
+from datetime import datetime, date
+import uuid
 
+
+redis_client = redis.Redis(
+    host=ENVConfig.REDIS_HOST,
+    port=int(ENVConfig.REDIS_PORT),
+    decode_responses=True
+)
 
 
 HEADERS = {
@@ -146,21 +156,6 @@ async def updateAvatarService(avatar: Annotated[UploadFile, File()], userId: str
     }
 
 
-# async def updateBasicDetailsService(data: authModel.UpdateBasicDetails, userId: str):
-#     check_exist = await profile_collection.find_one_and_update({"user_id": userId},{
-#         "$set":{
-#             "name":data.name,
-#             "update_at":datetime.now()
-#         }
-#     })
-#     if not check_exist:
-#         raise HTTPException(status_code=404, detail="User details not found")
-    
-#     return{
-#         "msg": "Profile details update successfull"
-#     }
-
-from datetime import datetime, date
 
 async def updateBasicDetailsService(data: authModel.UpdateBasicDetails, userId: str):
     update_data = data.dict(exclude_unset=True)
@@ -210,6 +205,7 @@ def sendOTPEmail(email: str, otp: int):
 
 
 async def requestRegisterOTP(data: authModel.RegisterUser):
+    email = data.email.lower()
     exists = await user_collection.find_one({"email": data.email.lower()})
     if exists:
         raise HTTPException(status_code=400, detail="User already exists")
@@ -219,15 +215,19 @@ async def requestRegisterOTP(data: authModel.RegisterUser):
     salt = bcrypt.gensalt()
     hashed_password = bcrypt.hashpw(data.password.encode(), salt).decode()
 
-    await otp_collection.delete_many({"email": data.email.lower()})
+    redis_key = f"otp:{email}"
 
-    await otp_collection.insert_one({
-        "email": data.email.lower(),
+    redis_value = {
         "otp": otp,
         "name": data.name,
-        "password": hashed_password,
-        "expires_at": datetime.utcnow() + timedelta(minutes=ENVConfig.OTP_EXP_MINUTES)
-    })
+        "password": hashed_password
+    }
+
+    await redis_client.setex(
+        redis_key,
+        ENVConfig.OTP_EXP_MINUTES * 60,
+        json.dumps(redis_value)
+    )
 
     sendOTPEmail(data.email, otp)
 
@@ -236,16 +236,20 @@ async def requestRegisterOTP(data: authModel.RegisterUser):
 
 
 async def verifyOTPAndRegisterOnlyOTP(data: authModel.OTPOnlyVerifyRequest):
-    record = await otp_collection.find_one({"otp": data.otp})
+    email = data.email.lower()
+    redis_key = f"otp:{email}"
 
+    record = await redis_client.get(redis_key)
     if not record:
+        raise HTTPException(status_code=400, detail=" OTP expired or invalid OTP")
+
+    record = json.loads(record)
+
+    if str(record["otp"]) != str(data.otp):
         raise HTTPException(status_code=400, detail="Invalid OTP")
 
-    if record["expires_at"] < datetime.utcnow():
-        raise HTTPException(status_code=400, detail="OTP expired")
-
     user = await user_collection.insert_one({
-        "email": record["email"],
+        "email": email,
         "password": record["password"],
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow()
@@ -258,9 +262,31 @@ async def verifyOTPAndRegisterOnlyOTP(data: authModel.OTPOnlyVerifyRequest):
         "updated_at": datetime.utcnow()
     })
 
-    await otp_collection.delete_one({"_id": record["_id"]})
+    await redis_client.delete(redis_key)
+    
+    sendRegistrationSuccessEmail(email=email, name=record["name"])
 
     return {"msg": "Registration successful"}
+
+
+
+def sendRegistrationSuccessEmail(email: str, name: str):
+    msg = EmailMessage()
+    msg["Subject"] = "Registration Successful"
+    msg["From"] = f"Arnab Basak <{ENVConfig.SMTP_EMAIL}>"
+    msg["To"] = email
+
+    html = Path("services/MailFormat/registrationSuccess.html").read_text(encoding="utf-8")
+
+    html = html.replace("{name}", name)
+    html = html.replace("{email}", email)
+
+    msg.add_alternative(html, subtype = "html")
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(ENVConfig.SMTP_EMAIL, ENVConfig.SMTP_PASSWORD)
+        server.send_message(msg)
+
 
 
 async def googleAuthService(id_token_str: str):

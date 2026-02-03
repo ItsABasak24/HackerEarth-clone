@@ -46,16 +46,9 @@ async def updateBasicDetailsController(data, userId):
 async def requestRegisterOTPController(data: authModel.RegisterUser):
     return await authService.requestRegisterOTP(data)
 
-# async def verifyOTPRegisterController(data: authModel.OTPVerifyRequest):
-#     return await authService.verifyOTPAndRegister(data)
-
 
 async def verifyOTPOnlyController(data: authModel.OTPOnlyVerifyRequest):
     return await authService.verifyOTPAndRegisterOnlyOTP(data)
-
-
-# async def googleRequestOTPController(data: authModel.GoogleAuthRequest):
-#     return await authService.googleRequestOTP(data.id_token)
 
 async def googleAuthController(data: authModel.GoogleAuthRequest):
     return await authService.googleAuthService(data.id_token)
