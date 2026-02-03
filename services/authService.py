@@ -263,23 +263,31 @@ async def verifyOTPAndRegisterOnlyOTP(data: authModel.OTPOnlyVerifyRequest):
     })
 
     await redis_client.delete(redis_key)
+
+    login_token = str(uuid.uuid4())
+    await redis_client.setex(
+        f"login_token:{login_token}",
+        300,
+        str(user.inserted_id)
+    )
     
-    sendRegistrationSuccessEmail(email=email, name=record["name"])
+    sendRegistrationSuccessEmail(email=email, name=record["name"], login_token = login_token)
 
     return {"msg": "Registration successful"}
 
 
 
-def sendRegistrationSuccessEmail(email: str, name: str):
+def sendRegistrationSuccessEmail(email: str, name: str, login_token: str):
     msg = EmailMessage()
     msg["Subject"] = "Registration Successful"
     msg["From"] = f"Arnab Basak <{ENVConfig.SMTP_EMAIL}>"
     msg["To"] = email
 
     html = Path("services/MailFormat/registrationSuccess.html").read_text(encoding="utf-8")
-
+    login_url = f"http://localhost:3000/auto-login?token={login_token}"
     html = html.replace("{name}", name)
     html = html.replace("{email}", email)
+    html = html.replace("{login_url}", login_url)
 
     msg.add_alternative(html, subtype = "html")
 
@@ -287,6 +295,30 @@ def sendRegistrationSuccessEmail(email: str, name: str):
         server.login(ENVConfig.SMTP_EMAIL, ENVConfig.SMTP_PASSWORD)
         server.send_message(msg)
 
+
+async def autoLoginService(token: str):
+    redis_key = f"login_token:{token}"
+
+    user_id = await redis_client.get(redis_key)
+
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid or expired login link")
+
+    await redis_client.delete(redis_key)
+
+    jwt_token = jwt.encode(
+        {
+            "user_id": user_id,
+            "iat": datetime.utcnow(),
+            "exp": datetime.utcnow() + timedelta(days=10)
+        },
+        ENVConfig.JWT_AUTH_SECRET,
+        algorithm="HS256"
+    )
+
+    return {
+        "token": jwt_token
+    }
 
 
 async def googleAuthService(id_token_str: str):

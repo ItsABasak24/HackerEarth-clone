@@ -21,6 +21,9 @@ async def verifyOTP(data: authModel.OTPOnlyVerifyRequest):
 async def googleAuth(data: authModel.GoogleAuthRequest):
     return await authController.googleAuthController(data)
 
+@router.get("/auto-login")
+async def autoLogin(token: str):
+    return await authController.autoLoginController(token)
 
 # login user
 @router.post("/login")
