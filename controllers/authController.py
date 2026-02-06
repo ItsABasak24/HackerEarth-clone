@@ -50,8 +50,8 @@ async def requestRegisterOTPController(data: authModel.RegisterUser):
 async def verifyOTPOnlyController(data: authModel.OTPOnlyVerifyRequest):
     return await authService.verifyOTPAndRegisterOnlyOTP(data)
 
-async def autoLoginController(token: str):
-    return await authService.autoLoginService(token)
+# async def autoLoginController(token: str):
+#     return await authService.autoLoginService(token)
 
 async def googleAuthController(data: authModel.GoogleAuthRequest):
     return await authService.googleAuthService(data.id_token)

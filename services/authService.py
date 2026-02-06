@@ -1,4 +1,4 @@
-from config.db import user_collection, profile_collection, testcase_collection
+from config.db import user_collection, profile_collection, testcase_collection, problem_collection
 from models import authModel
 from fastapi.exceptions import HTTPException
 import bcrypt , bson
@@ -18,7 +18,8 @@ from datetime import date, datetime
 import json
 import redis.asyncio as redis
 from datetime import datetime, date
-import uuid
+from bson import json_util
+
 
 
 redis_client = redis.Redis(
@@ -56,6 +57,15 @@ LANGUAGE_TEMPLATE_MAP = {
     "go":"go.txt",
     "rust":"rust.txt",
 }
+
+def serialize_datetimes(data: dict):
+    for key, value in data.items():
+        if isinstance(value, datetime):
+            data[key] = value.isoformat()
+        elif isinstance(value, dict):
+            serialize_datetimes(value)
+    return data
+
 
 def getTemplate(problem_id: str, language: str) -> str:
     if language not in LANGUAGE_TEMPLATE_MAP:
@@ -111,6 +121,14 @@ async def loginService(data:authModel.LoginUser):
 
 
 async def profileService(userId: str):
+    redis_key = f"profile:{userId}"
+
+    # Check in Redis First
+    cached_profile = await redis_client.get(redis_key)
+    if cached_profile:
+        return json.loads(cached_profile)
+    
+    # If didn't find in redis fetches from MongoDB
     check_exist = await user_collection.find_one(
         {"_id": bson.ObjectId(userId)},
         {
@@ -131,6 +149,19 @@ async def profileService(userId: str):
         if profile.get("avatar"):
             profile["avatar"] = profile["avatar"]["image_uri"]
 
+    response = {
+        "email": check_exist["email"],
+        **profile  # It merges two dictionaries
+    }
+    response = serialize_datetimes(response)
+
+    # Store in Redis after fethcing from MongoDB for 10 minutes
+    await redis_client.setex(
+        redis_key,
+        600,
+        json.dumps(response)
+    )
+
     return check_exist | (profile or {})
 
 
@@ -150,6 +181,7 @@ async def updateAvatarService(avatar: Annotated[UploadFile, File()], userId: str
             "update_at":datetime.now()
         }
     })
+    await redis_client.delete(f"profile:{userId}")
     return {
         "msg":"Avatar updated successfull.",
         "url":upload_result["secure_url"]
@@ -158,6 +190,7 @@ async def updateAvatarService(avatar: Annotated[UploadFile, File()], userId: str
 
 
 async def updateBasicDetailsService(data: authModel.UpdateBasicDetails, userId: str):
+    redis_key = f"profile:{userId}"
     update_data = data.dict(exclude_unset=True)
 
     # 🔥 FIX: convert date → datetime
@@ -167,16 +200,20 @@ async def updateBasicDetailsService(data: authModel.UpdateBasicDetails, userId: 
             datetime.min.time()
         )
 
-    update_data["updated_at"] = datetime.now()
+    update_data["updated_at"] = datetime.now().isoformat()
 
     result = await profile_collection.find_one_and_update(
         {"user_id": userId},
         {"$set": update_data},
         return_document=True
     )
-
     if not result:
         raise HTTPException(status_code=404, detail="User profile not found")
+    await redis_client.setex(
+        redis_key,
+        3600,
+        json_util.dumps(result)
+    )
 
     return {"msg": "Profile details updated successfully"}
 
@@ -264,30 +301,30 @@ async def verifyOTPAndRegisterOnlyOTP(data: authModel.OTPOnlyVerifyRequest):
 
     await redis_client.delete(redis_key)
 
-    login_token = str(uuid.uuid4())
-    await redis_client.setex(
-        f"login_token:{login_token}",
-        300,
-        str(user.inserted_id)
-    )
+    # login_token = str(uuid.uuid4())
+    # await redis_client.setex(
+    #     f"login_token:{login_token}",
+    #     300,
+    #     str(user.inserted_id)
+    # )
     
-    sendRegistrationSuccessEmail(email=email, name=record["name"], login_token = login_token)
+    sendRegistrationSuccessEmail(email=email, name=record["name"])
 
     return {"msg": "Registration successful"}
 
 
 
-def sendRegistrationSuccessEmail(email: str, name: str, login_token: str):
+def sendRegistrationSuccessEmail(email: str, name: str):
     msg = EmailMessage()
     msg["Subject"] = "Registration Successful"
     msg["From"] = f"Arnab Basak <{ENVConfig.SMTP_EMAIL}>"
     msg["To"] = email
 
     html = Path("services/MailFormat/registrationSuccess.html").read_text(encoding="utf-8")
-    login_url = f"http://localhost:3000/auto-login?token={login_token}"
+    # login_url = f"http://localhost:3000/auto-login?token={login_token}"
     html = html.replace("{name}", name)
     html = html.replace("{email}", email)
-    html = html.replace("{login_url}", login_url)
+    # html = html.replace("{login_url}", login_url)
 
     msg.add_alternative(html, subtype = "html")
 
@@ -296,29 +333,29 @@ def sendRegistrationSuccessEmail(email: str, name: str, login_token: str):
         server.send_message(msg)
 
 
-async def autoLoginService(token: str):
-    redis_key = f"login_token:{token}"
+# async def autoLoginService(token: str):
+#     redis_key = f"login_token:{token}"
 
-    user_id = await redis_client.get(redis_key)
+#     user_id = await redis_client.get(redis_key)
 
-    if not user_id:
-        raise HTTPException(status_code=400, detail="Invalid or expired login link")
+#     if not user_id:
+#         raise HTTPException(status_code=400, detail="Invalid or expired login link")
 
-    await redis_client.delete(redis_key)
+#     await redis_client.delete(redis_key)
 
-    jwt_token = jwt.encode(
-        {
-            "user_id": user_id,
-            "iat": datetime.utcnow(),
-            "exp": datetime.utcnow() + timedelta(days=10)
-        },
-        ENVConfig.JWT_AUTH_SECRET,
-        algorithm="HS256"
-    )
+#     jwt_token = jwt.encode(
+#         {
+#             "user_id": user_id,
+#             "iat": datetime.utcnow(),
+#             "exp": datetime.utcnow() + timedelta(days=10)
+#         },
+#         ENVConfig.JWT_AUTH_SECRET,
+#         algorithm="HS256"
+#     )
 
-    return {
-        "token": jwt_token
-    }
+#     return {
+#         "token": jwt_token
+#     }
 
 
 async def googleAuthService(id_token_str: str):
@@ -349,6 +386,8 @@ async def googleAuthService(id_token_str: str):
                 "updated_at": datetime.utcnow(),
             })
             user_id = str(user_doc.inserted_id)
+            sendRegistrationSuccessEmail(email=email, name=name)
+
         else:
             user_id = str(user["_id"])
 
@@ -367,6 +406,29 @@ async def googleAuthService(id_token_str: str):
         }
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
+    
+    
+
+async def getProblembyId(problem_id: str):
+    redis_key = f"problem:{problem_id}"
+    cached = await redis_client.get(redis_key)
+    if cached:
+        return json.loads(cached)
+    
+    problem = await problem_collection.find_one(
+        {"_id":bson.ObjectId(problem_id)}
+    )
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    problem["_id"] = str(problem["_id"])
+
+    await redis_client.setex(
+        redis_key,
+        3600,
+        json.dumps(problem)
+    )
+    return problem
 
 
 async def runCodeService(data: authModel.RunCodeRequest):
@@ -392,9 +454,25 @@ async def runCodeService(data: authModel.RunCodeRequest):
 
 
 async def getTestCasesForProblem(problem_id: str):
-    return await testcase_collection.find(
+    redis_key = f"testcases:{problem_id}"
+    cached_testcases = await redis_client.get(redis_key)
+    if cached_testcases:
+        return json.loads(cached_testcases)
+    testcases =  await testcase_collection.find(
         {"problem_id": problem_id}
     ).to_list(None)
+    if not testcases:
+        return []
+    
+    for tc in testcases:
+        tc["_id"] = str(tc["_id"])
+
+    await redis_client.setex(
+        redis_key,
+        3600,
+        json.dumps(testcases)
+    )
+    return testcases
 
 
 def normalize_output(s: str) -> str:
