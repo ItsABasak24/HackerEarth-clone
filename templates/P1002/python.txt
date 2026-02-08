@@ -1,8 +1,0 @@
-n = int(input())
-
-fact = 1
-
-# WRITE YOUR LOGIC HERE
-
-
-print(fact)

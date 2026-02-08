@@ -1,6 +1,8 @@
 from services import authService
 from models import authModel
 from fastapi import HTTPException
+from config.db import submission_collection
+from datetime import datetime
 
 async def registerController(data:authModel.RegisterUser):
     try:
@@ -61,14 +63,34 @@ async def runCodeController(data: authModel.RunCodeRequest):
     return await authService.runCodeService(data)
 
 
-async def submitController(data: authModel.SubmitRequest):
+async def submitSolutionController(data: authModel.SubmitRequest, userId: str):
     testcases = await authService.getTestCasesForProblem(data.problem_id)
 
     if not testcases:
         raise HTTPException(status_code=404, detail="Problem not found")
     
-    return await authService.judgeSubmission(
+    result = await authService.judgeSubmission(
         data.language,
         data.code,
         testcases
     )
+
+    await submission_collection.insert_one({
+        "user_id": userId,
+        "problem_id": data.problem_id,
+        "language": data.language.value,
+        "verdict": result["verdict"],
+        "submitted_at": datetime.utcnow()
+    })
+
+    return result
+
+async def canAddProblemController(userId: str):
+    allowed = await authService.canUserAddProblem(userId)
+    return {"allowed": allowed}
+
+async def submitProblemForReviewController(
+    data: authModel.AddProblemRequest,
+    userId: str
+):
+    return await authService.submitProblemForReview(data, userId)

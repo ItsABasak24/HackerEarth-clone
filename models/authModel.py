@@ -125,3 +125,25 @@ class SubmitRequest(BaseModel):
     problem_id: str
     language: SupportedLanguage
     code: str
+
+
+class BoilerPlate(BaseModel):
+    language: SupportedLanguage
+    code: str
+
+
+class AddProblemRequest(BaseModel):
+    problem_id: str
+    title: str
+    description: str
+    difficulty: str
+    input_format: str
+    output_format: str
+    constraints: str
+    testcases: List[TestCase]
+    boilerplates: List[BoilerPlate]
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str

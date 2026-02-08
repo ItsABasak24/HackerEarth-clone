@@ -44,3 +44,5 @@ class ENVConfig:
     REDIS_PORT = os.getenv("REDIS_PORT", "")
 
 
+    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")

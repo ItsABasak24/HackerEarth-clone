@@ -1,9 +1,0 @@
-n = int(input())
-arr = list(map(int, input().split()))
-
-# WRITE YOUR LOGIC HERE
-max_val = arr[0]
-
-
-
-print(max_val)

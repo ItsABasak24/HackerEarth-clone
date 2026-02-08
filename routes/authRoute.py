@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Request, Depends, UploadFile, File
 from controllers import authController
 from models import authModel
+from config.db import pending_problem_collection, pending_boilerplate_collection, pending_testcase_collection, problem_collection, testcase_collection
 from middlewares.verifyToken import verifyToken
 from typing import Annotated
+from fastapi.exceptions import HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from starlette.responses import RedirectResponse
 router = APIRouter(prefix="/api/v1/auth", tags=['auth'])
@@ -51,7 +53,17 @@ async def runCode(data: authModel.RunCodeRequest, userId: str = Depends(verifyTo
 
 @executionRouter.post("/submit")
 async def submitCode(data: authModel.SubmitRequest, userId: str = Depends(verifyToken)):
-    return await authController.submitController(data)
+    result =await authController.submitSolutionController(data, userId)
+    return result
+
+
+@router.get("/can-add-problem")
+async def canAddProblem( userId = Depends(verifyToken)):
+    return await authController.canAddProblemController(userId)
+
+@router.post("/submit-problem")
+async def submitNewProblem(data: authModel.AddProblemRequest, userId = Depends(verifyToken)):
+    return await authController.submitProblemForReviewController(data, userId)
 
 
 @router.post("/logout")
@@ -59,3 +71,4 @@ async def logout():
     return {
         "msg": "Logged out successfully"
     }
+

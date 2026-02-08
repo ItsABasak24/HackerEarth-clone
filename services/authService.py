@@ -1,4 +1,4 @@
-from config.db import user_collection, profile_collection, testcase_collection, problem_collection
+from config.db import user_collection, profile_collection, testcase_collection, problem_collection, submission_collection
 from models import authModel
 from fastapi.exceptions import HTTPException
 import bcrypt , bson
@@ -19,7 +19,7 @@ import json
 import redis.asyncio as redis
 from datetime import datetime, date
 from bson import json_util
-
+from config.db import pending_boilerplate_collection, pending_testcase_collection, pending_problem_collection, activity_collection, admin_collection, boilerplate_collection
 
 
 redis_client = redis.Redis(
@@ -45,18 +45,6 @@ FILE_NAME_MAP = {
     "rust": "main.rs"
 }
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-TEMPLATE_DIR = BASE_DIR / "templates"
-
-LANGUAGE_TEMPLATE_MAP = {
-    "c":"c.txt",
-    "cpp":"cpp.txt",
-    "java":"java.txt",
-    "python":"python.txt",
-    "javascript":"javascript.txt",
-    "go":"go.txt",
-    "rust":"rust.txt",
-}
 
 def serialize_datetimes(data: dict):
     for key, value in data.items():
@@ -67,16 +55,31 @@ def serialize_datetimes(data: dict):
     return data
 
 
-def getTemplate(problem_id: str, language: str) -> str:
-    if language not in LANGUAGE_TEMPLATE_MAP:
-        raise ValueError(f"Unsuported language: {language}")
+# def getTemplate(problem_id: str, language: str) -> str:
+#     if language not in LANGUAGE_TEMPLATE_MAP:
+#         raise ValueError(f"Unsuported language: {language}")
     
-    file_path = TEMPLATE_DIR / problem_id / LANGUAGE_TEMPLATE_MAP[language]
-    if not file_path.exists():
-        raise FileNotFoundError(
-            f"Template not found for problem {problem_id} and language {language}"
+#     file_path = TEMPLATE_DIR / problem_id / LANGUAGE_TEMPLATE_MAP[language]
+#     if not file_path.exists():
+#         raise FileNotFoundError(
+#             f"Template not found for problem {problem_id} and language {language}"
+#         )
+#     return file_path.read_text()
+
+async def getTemplate(problem_id: str, language: str):
+    template = await boilerplate_collection.find_one({
+        "problem_id": problem_id,
+        "language": language
+    })
+
+    if not template:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No boilerplate found for {problem_id} ({language})"
         )
-    return file_path.read_text()
+
+    return template["code"]
+
 
 async def registerService(data:authModel.RegisterUser):
     check_exist = await user_collection.find_one({"email":data.email.lower()})
@@ -526,6 +529,67 @@ async def judgeSubmission(language, code, testcases):
             }
     return {
         "verdict": "Accepted"
+    }
+
+
+async def canUserAddProblem(user_id: str) -> bool:
+    total_problems = await problem_collection.count_documents({})
+
+    solved = await submission_collection.distinct(
+        "problem_id",
+        {
+            "user_id": user_id,
+            "verdict": "Accepted"
+        }
+    )
+    return len(solved) == total_problems and total_problems > 0
+
+
+async def submitProblemForReview(data: authModel.AddProblemRequest, userId: str):
+    # 1️⃣ Eligibility check
+    if not await canUserAddProblem(userId):
+        raise HTTPException(
+            status_code=403,
+            detail="Not eligible to add problem"
+        )
+
+    # 2️⃣ Duplicate problem check (MAIN FIX)
+    if await problem_collection.find_one({"problem_id": data.problem_id}):
+        raise HTTPException(
+            status_code=400,
+            detail="Problem already exists"
+        )
+
+    # 3️⃣ Insert pending problem (ALWAYS)
+    await pending_problem_collection.insert_one({
+        **data.dict(exclude={"testcases", "boilerplates"}),
+        "submitted_by": userId,
+        "status": "pending",
+        "submitted_at": datetime.utcnow()
+    })
+
+    # 4️⃣ Insert testcases
+    for tc in data.testcases:
+        await pending_testcase_collection.insert_one(tc.dict())
+
+    # 5️⃣ Insert boilerplates
+    for bp in data.boilerplates:
+        await pending_boilerplate_collection.insert_one({
+            "problem_id": data.problem_id,
+            "language": bp.language.value,
+            "code": bp.code
+        })
+
+    # 6️⃣ Log activity
+    await activity_collection.insert_one({
+        "user_id": userId,
+        "action": "add_problem_request",
+        "problem_id": data.problem_id,
+        "timestamp": datetime.utcnow()
+    })
+
+    return {
+        "msg": "Problem submitted for admin review"
     }
 
 

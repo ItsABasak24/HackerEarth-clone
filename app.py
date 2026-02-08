@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.authRoute import router as AuthRouter, executionRouter
 from services.authService import getTemplate
 from config import Env
+from routes.adminRoute import router as AdminRouter
 
 app = FastAPI()
 
@@ -18,6 +19,7 @@ app.add_middleware(CORSMiddleware, allow_headers=["*"],
 
 app.include_router(AuthRouter)
 app.include_router(executionRouter)
+app.include_router(AdminRouter)
 @app.get("/", tags=['health'])
 def healthRoute():
     return{
@@ -25,17 +27,14 @@ def healthRoute():
     }
 
 @app.get("/template")
-def fetchTemplate(problem_id: str, language: str):
-    try:
-        code = getTemplate(problem_id, language)
-        return{
-            "problem_id": problem_id,
-            "language": language,
-            "code": code
-        } 
-    except Exception as e:
-        print("Template error:", e)
-        raise e
+async def fetchTemplate(problem_id: str, language: str):
+    code = await getTemplate(problem_id, language)
+    return {
+        "problem_id": problem_id,
+        "language": language,
+        "code": code
+    }
+
         
 
 
