@@ -58,6 +58,8 @@ async def verifyOTPOnlyController(data: authModel.OTPOnlyVerifyRequest):
 async def googleAuthController(data: authModel.GoogleAuthRequest):
     return await authService.googleAuthService(data.id_token)
 
+async def getProblemController(problem_id: str):
+    return await authService.getProblembyId(problem_id)
 
 async def runCodeController(data: authModel.RunCodeRequest):
     return await authService.runCodeService(data)
@@ -70,9 +72,10 @@ async def submitSolutionController(data: authModel.SubmitRequest, userId: str):
         raise HTTPException(status_code=404, detail="Problem not found")
     
     result = await authService.judgeSubmission(
-        data.language,
+        data.problem_id,
+        data.language.value,
         data.code,
-        testcases
+        userId
     )
 
     await submission_collection.insert_one({

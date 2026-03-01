@@ -1,15 +1,12 @@
-from fastapi import APIRouter, Request, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File
 from controllers import authController
 from models import authModel
-from config.db import pending_problem_collection, pending_boilerplate_collection, pending_testcase_collection, problem_collection, testcase_collection
+from config.db import problem_collection, submission_collection, boilerplate_collection
 from middlewares.verifyToken import verifyToken
-from typing import Annotated
-from fastapi.exceptions import HTTPException
-from fastapi.security import OAuth2PasswordRequestForm
-from starlette.responses import RedirectResponse
+
 router = APIRouter(prefix="/api/v1/auth", tags=['auth'])
 executionRouter = APIRouter(prefix="/api/v1/execute", tags=["execution"])
-
+problemsRouter = APIRouter(prefix="/api/v1/problems", tags=["problems"])
 @router.post("/register/request-otp")
 async def requestOTP(data: authModel.RegisterUser):
     return await authController.requestRegisterOTPController(data)
@@ -46,6 +43,34 @@ async def updateAvatar(avatar: UploadFile =  File(...), userId = Depends(verifyT
 async def UpdateBasicDetails(data:authModel.UpdateBasicDetails, userId = Depends(verifyToken)):
     return await authController.updateBasicDetailsController(data, userId)
 
+@problemsRouter.get("/")
+async def getAllProblems(userId = Depends(verifyToken)):
+    problems = await problem_collection.find().to_list(None)
+    accepted = await submission_collection.find({
+        "user_id": userId,
+        "status": "Accepted"
+    }).to_list(None)
+
+    solved_set = {s["problem_id"] for s in accepted}
+    for p in problems:
+        p["_id"] = str(p["_id"])
+        p["isSolved"] = p["problem_id"] in solved_set
+    return problems
+
+@problemsRouter.get("/{problem_id}/languages")
+async def getProblemLanguages(problem_id: str):
+    languages = await boilerplate_collection.distinct(
+        "language",
+        {
+            "problem_id": problem_id
+        }
+    )
+    return {
+            "languages": languages
+        }
+@problemsRouter.get("/{problem_id}")
+async def getProblem(problem_id: str):
+    return await authController.getProblemController(problem_id)
 
 @executionRouter.post("/run", response_model=authModel.RunCodeResponse)
 async def runCode(data: authModel.RunCodeRequest, userId: str = Depends(verifyToken)):

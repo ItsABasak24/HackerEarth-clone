@@ -1,4 +1,4 @@
-from config.db import admin_collection
+from config.db import admin_collection, user_collection, problem_collection, pending_problem_collection, submission_collection
 from fastapi.exceptions import HTTPException
 from config.Env import ENVConfig
 import jwt
@@ -24,13 +24,16 @@ async def adminLoginService(username: str, password: str):
             "exp": datetime.utcnow() + timedelta(hours=8)
         },
         ENVConfig.JWT_AUTH_SECRET,
-        algorithm="HS256"
+        algorithm=ENVConfig.ALGORITHM
     )
 
     return {
         "msg": "Admin login successful",
         "token": token
     }
+
+print("LOGIN SECRET:", ENVConfig.JWT_AUTH_SECRET)
+
 
 async def getPendingProblems():
     problems = await pending_problem_collection.find().to_list(None)
@@ -45,18 +48,7 @@ async def getPendingProblems():
 
 async def approveProblem(problem_id: str):
 
-    # Move boilerplates
-    boilerplates = await pending_boilerplate_collection.find(
-        {"problem_id": problem_id}
-    ).to_list(None)
-
-    if boilerplates:
-        for bp in boilerplates:
-            bp.pop("_id", None)
-        await boilerplate_collection.insert_many(boilerplates)
-
-
-    # 1️⃣ Fetch pending problem
+    # 1️⃣ Validate problem exists
     problem = await pending_problem_collection.find_one(
         {"problem_id": problem_id}
     )
@@ -64,35 +56,54 @@ async def approveProblem(problem_id: str):
     if not problem:
         raise HTTPException(status_code=404, detail="Pending problem not found")
 
-    # Remove Mongo _id before inserting
-    problem.pop("_id", None)
+    # 2️⃣ Fetch related data first (IMPORTANT)
+    boilerplates = await pending_boilerplate_collection.find(
+        {"problem_id": problem_id}
+    ).to_list(None)
 
-    # 2️⃣ Insert into main problems collection
-    problem["approved_at"] = datetime.utcnow()
-    await problem_collection.insert_one(problem)
-
-    # 3️⃣ Move testcases
     testcases = await pending_testcase_collection.find(
         {"problem_id": problem_id}
     ).to_list(None)
 
-    if testcases:
-        for tc in testcases:
-            tc.pop("_id", None)
-        await testcase_collection.insert_many(testcases)
+    # Optional safety check
+    if not testcases:
+        raise HTTPException(
+            status_code=400,
+            detail="No testcases found for this problem"
+            )
 
-    # 4️⃣ Cleanup pending collections
-    await pending_problem_collection.delete_many(
+    # 3️⃣ Clean Mongo _id fields
+    problem.pop("_id", None)
+
+    for bp in boilerplates:
+        bp.pop("_id", None)
+
+    for tc in testcases:
+        tc.pop("_id", None)
+
+    # 4️⃣ Insert into main collections
+    problem["approved_at"] = datetime.utcnow()
+    await problem_collection.insert_one(problem)
+
+    if boilerplates:
+        await boilerplate_collection.insert_many(boilerplates)
+
+    await testcase_collection.insert_many(testcases)
+
+    # 5️⃣ Delete from pending collections (ONLY AFTER SUCCESSFUL INSERT)
+    await pending_problem_collection.delete_one(
         {"problem_id": problem_id}
     )
-    await pending_testcase_collection.delete_many(
-        {"problem_id": problem_id}
-    )
+
     await pending_boilerplate_collection.delete_many(
         {"problem_id": problem_id}
     )
 
-    # 5️⃣ Log admin action
+    await pending_testcase_collection.delete_many(
+        {"problem_id": problem_id}
+    )
+
+    # 6️⃣ Log action
     await activity_collection.insert_one({
         "action": "problem_approved",
         "problem_id": problem_id,
@@ -134,4 +145,43 @@ async def rejectProblem(problem_id: str):
     return {
         "msg": "Problem rejected successfully",
         "problem_id": problem_id
+    }
+
+async def getAdminInsights():
+
+    total_users = await user_collection.count_documents({})
+    total_problems = await problem_collection.count_documents({})
+    pending_problems = await pending_problem_collection.count_documents({})
+    total_submissions = await submission_collection.count_documents({})
+    accepted_submissions = await submission_collection.count_documents(
+        {"status": "Accepted"}
+    )
+
+    # Example submission per day (last 7 days)
+    pipeline = [
+        {
+            "$group": {
+                "_id": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "date": "$timestamp"
+                    }
+                },
+                "count": {"$sum": 1}
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
+
+    submissions_per_day = await submission_collection.aggregate(
+        pipeline
+    ).to_list(None)
+
+    return {
+        "total_users": total_users,
+        "total_problems": total_problems,
+        "pending_problems": pending_problems,
+        "total_submissions": total_submissions,
+        "accepted_submissions": accepted_submissions,
+        "submissions_per_day": submissions_per_day
     }

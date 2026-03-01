@@ -94,17 +94,21 @@ class SupportedLanguage(str, Enum):
     rust = "rust"
 
 class RunCodeRequest(BaseModel):
+    problem_id: str
     language: SupportedLanguage
     code: str = Field(..., min_length=1)
-    stdin: Optional[str] = ""
+
+class TestcaseResult(BaseModel):
+    input: str
+    expected: str
+    actual: str
+    passed: bool
 
 class RunCodeResponse(BaseModel):
-    status: Optional[str] = None
-    stdout: Optional[str] = None
+    status: str
+    results: Optional[List[TestcaseResult]] = None
     stderr: Optional[str] = None
-    compilationTime: Optional[int] = None
-    executionTime: Optional[int] = None
-    memoryUsed: Optional[int] = None
+
 
 
 class Problem(BaseModel):

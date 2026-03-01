@@ -27,3 +27,7 @@ async def approveProblem(problem_id: str, adminId = Depends(verifyAdmin)):
 @router.post("/reject/{problem_id}")
 async def rejectProblem(problem_id: str, adminId = Depends(verifyAdmin)):
     return await adminService.rejectProblem(problem_id)
+
+@router.get("/insights")
+async def adminInsights(adminId = Depends(verifyAdmin)):
+    return await adminService.getAdminInsights()

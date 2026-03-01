@@ -15,12 +15,12 @@ from typing import Annotated
 from fastapi import UploadFile, File
 import cloudinary.uploader
 from datetime import date, datetime
-import json
+import json, uuid
 import redis.asyncio as redis
 from datetime import datetime, date
 from bson import json_util
 from config.db import pending_boilerplate_collection, pending_testcase_collection, pending_problem_collection, activity_collection, admin_collection, boilerplate_collection
-
+from fastapi.encoders import jsonable_encoder
 
 redis_client = redis.Redis(
     host=ENVConfig.REDIS_HOST,
@@ -419,29 +419,43 @@ async def getProblembyId(problem_id: str):
         return json.loads(cached)
     
     problem = await problem_collection.find_one(
-        {"_id":bson.ObjectId(problem_id)}
+        {"problem_id": problem_id}
     )
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
     
     problem["_id"] = str(problem["_id"])
+    # Fetch ONLY sample testcases
+    sample_testcases = await testcase_collection.find({
+        "problem_id": problem_id,
+        "is_sample": True
+    }).limit(3).to_list(length=3)
+
+    for tc in sample_testcases:
+        tc["_id"] = str(tc["_id"])
+
+    problem["sample_testcases"] = sample_testcases
+    # Convert Mongo object safely to JSON-compatible format
+    problem_encoded = jsonable_encoder(problem)
 
     await redis_client.setex(
         redis_key,
         3600,
-        json.dumps(problem)
+        json.dumps(problem_encoded)
     )
-    return problem
+
+    return problem_encoded
 
 
-async def runCodeService(data: authModel.RunCodeRequest):
+async def executeCode(language: str, code: str, stdin: str):
+
     payload = {
-        "language": data.language.value,
-        "stdin": data.stdin,
+        "language": language,
+        "stdin": stdin,
         "files": [
             {
-                "name": FILE_NAME_MAP[data.language.value],
-                "content": data.code
+                "name": FILE_NAME_MAP[language],
+                "content": code
             }
         ]
     }
@@ -452,8 +466,60 @@ async def runCodeService(data: authModel.RunCodeRequest):
             json=payload,
             headers=HEADERS
         )
+
     response.raise_for_status()
     return response.json()
+
+async def runCodeService(data: authModel.RunCodeRequest):
+
+    sample_testcases = await testcase_collection.find({
+        "problem_id": data.problem_id,
+        "is_sample": True
+    }).limit(3).to_list(length=3)
+
+    results = []
+
+    for index, tc in enumerate(sample_testcases):
+
+        execution_result = await executeCode(
+            data.language.value,
+            data.code,
+            tc["input"]
+        )
+
+        stdout = (execution_result.get("stdout") or "").strip()
+        stderr = (execution_result.get("stderr") or "").strip()
+        expected = tc["expected_output"].strip()
+
+        passed = normalize_output(stdout) == normalize_output(expected)
+
+        results.append({
+            "input": tc["input"],
+            "expected": expected,
+            "actual": stdout,
+            "passed": passed
+        })
+
+        if stderr:
+            return {
+                "status": "Runtime Error",
+                "results": results
+            }
+
+        if not passed:
+            return {
+                "status": "Wrong Answer",
+                "results": results
+            }
+
+    return {
+        "status": "Passed",
+        "results": results
+    }
+
+
+
+
 
 
 async def getTestCasesForProblem(problem_id: str):
@@ -483,53 +549,59 @@ def normalize_output(s: str) -> str:
         line.rstrip() for line in s.rstrip().splitlines()
     )
 
-async def judgeSubmission(language, code, testcases):
-    for tc in testcases:
-        payload = authModel.RunCodeRequest(
-            language=language,
-            code=code,
-            stdin=tc["input"]
-        )
-        result = await runCodeService(payload)
-        stdout = (result.get("stdout") or "").strip()
-        stderr = (result.get("stderr") or "").strip()
+async def judgeSubmission(problem_id, language, code, user_id):
 
-        if stderr:
-            if language == "python":
-                if "syntaxerror" in stderr.lower() or "indentationerror" in stderr.lower():
-                    return {
-                        "verdict": "Compile Time Error",
-                        "stderr": stderr
-                    }
-            else:
-                if any(
-                    kw in stderr.lower()
-                    for kw in [
-                        "error:", "expected", "undefined", "cannot find",
-                        "compilation", "failed to compile", "abort"
-                    ]
-                ):
-                    return {
-                        "verdict": "Compile Time Error",
-                        "stderr": stderr
-                    }
+    hidden_testcases = await testcase_collection.find({
+        "problem_id": problem_id,
+        "is_sample": False
+    }).to_list(None)
+
+    results = []
+
+    for index, tc in enumerate(hidden_testcases):
+
+        execution_result = await executeCode(
+            language,
+            code,
+            tc["input"]
+        )
+
+        stdout = (execution_result.get("stdout") or "").strip()
+        stderr = (execution_result.get("stderr") or "").strip()
+        expected = tc["expected_output"].strip()
+
         if stderr:
             return {
                 "verdict": "Runtime Error",
                 "stderr": stderr
             }
-        user_output = normalize_output(stdout)
-        expected_output = normalize_output(str(tc["expected_output"]))
 
-        if user_output != expected_output:
+        passed = normalize_output(stdout) == normalize_output(expected)
+
+        results.append({
+            "testcase_number": index + 1,
+            "passed": passed
+        })
+
+        if not passed:
             return {
                 "verdict": "Wrong Answer",
-                "expected": expected_output,
-                "found": user_output
+                "results": results
             }
+
+    # Save accepted submission
+    await submission_collection.insert_one({
+        "user_id": user_id,
+        "problem_id": problem_id,
+        "language": language,
+        "status": "Accepted"
+    })
+
     return {
-        "verdict": "Accepted"
+        "verdict": "Accepted",
+        "results": results
     }
+
 
 
 async def canUserAddProblem(user_id: str) -> bool:
@@ -546,33 +618,49 @@ async def canUserAddProblem(user_id: str) -> bool:
 
 
 async def submitProblemForReview(data: authModel.AddProblemRequest, userId: str):
-    # 1️⃣ Eligibility check
+    # Eligibility check
     if not await canUserAddProblem(userId):
         raise HTTPException(
             status_code=403,
             detail="Not eligible to add problem"
         )
+    
+    # Prevent multipple pending submissions
+    if await pending_problem_collection.find_one({
+        "submitted_by": userId,
+        "status": "pending"
+    }):
+        raise HTTPException(400, "You already have a problem under review")
 
-    # 2️⃣ Duplicate problem check (MAIN FIX)
-    if await problem_collection.find_one({"problem_id": data.problem_id}):
+
+    # Duplicate problem check (MAIN FIX)
+    if await problem_collection.find_one({"problem_id": data.problem_id}) \
+    or await pending_problem_collection.find_one({"problem_id": data.problem_id}):
         raise HTTPException(
             status_code=400,
-            detail="Problem already exists"
+            detail="Problem already exists or under review"
         )
+    
+    # Validation
+    if not data.testcases or not data.boilerplates:
+        raise HTTPException(400, "Testcases and boilerplates required")
 
-    # 3️⃣ Insert pending problem (ALWAYS)
+    # Insert pending problem (ALWAYS)
     await pending_problem_collection.insert_one({
         **data.dict(exclude={"testcases", "boilerplates"}),
         "submitted_by": userId,
         "status": "pending",
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "rejection_reason": None,
         "submitted_at": datetime.utcnow()
     })
 
-    # 4️⃣ Insert testcases
+    # Insert testcases
     for tc in data.testcases:
         await pending_testcase_collection.insert_one(tc.dict())
 
-    # 5️⃣ Insert boilerplates
+    # Insert boilerplates
     for bp in data.boilerplates:
         await pending_boilerplate_collection.insert_one({
             "problem_id": data.problem_id,
@@ -580,7 +668,7 @@ async def submitProblemForReview(data: authModel.AddProblemRequest, userId: str)
             "code": bp.code
         })
 
-    # 6️⃣ Log activity
+    # Log activity
     await activity_collection.insert_one({
         "user_id": userId,
         "action": "add_problem_request",

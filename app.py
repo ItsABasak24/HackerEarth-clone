@@ -1,13 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes.authRoute import router as AuthRouter, executionRouter
+from routes.authRoute import router as AuthRouter, executionRouter, problemsRouter
 from services.authService import getTemplate
 from config import Env
 from routes.adminRoute import router as AdminRouter
 
 app = FastAPI()
 
-app.add_middleware(CORSMiddleware, allow_headers=["*"],
+app.add_middleware(CORSMiddleware, allow_headers=["*"], 
     allow_methods = ["*"],
     allow_origins= ["http://localhost:5173",
                     "http://127.0.0.1:5173",
@@ -20,6 +20,7 @@ app.add_middleware(CORSMiddleware, allow_headers=["*"],
 app.include_router(AuthRouter)
 app.include_router(executionRouter)
 app.include_router(AdminRouter)
+app.include_router(problemsRouter)
 @app.get("/", tags=['health'])
 def healthRoute():
     return{
